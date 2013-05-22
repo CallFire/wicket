@@ -16,14 +16,11 @@
  */
 package org.apache.wicket.atmosphere;
 
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
 import java.util.Collection;
 
 import org.apache.wicket.Application;
 import org.apache.wicket.Component;
 import org.apache.wicket.Page;
-import org.apache.wicket.WicketRuntimeException;
 import org.apache.wicket.ajax.AjaxRequestTarget;
 import org.apache.wicket.protocol.http.WebApplication;
 import org.apache.wicket.request.IRequestCycle;
@@ -44,6 +41,8 @@ public class AtmosphereRequestHandler implements IRequestHandler
 
 	private Collection<EventSubscription> subscriptions;
 
+	private EventSubscriptionInvoker eventSubscriptionInvoker;
+
 	private boolean ajaxRequestScheduled = false;
 
 	/**
@@ -52,13 +51,15 @@ public class AtmosphereRequestHandler implements IRequestHandler
 	 * @param pageKey
 	 * @param subscriptions
 	 * @param event
+	 * @param eventSubscriptionInvoker
 	 */
 	public AtmosphereRequestHandler(PageKey pageKey, Collection<EventSubscription> subscriptions,
-		AtmosphereEvent event)
+		AtmosphereEvent event, EventSubscriptionInvoker eventSubscriptionInvoker)
 	{
 		this.pageKey = pageKey;
 		this.subscriptions = subscriptions;
 		this.event = event;
+		this.eventSubscriptionInvoker = eventSubscriptionInvoker;
 	}
 
 	@Override
@@ -87,33 +88,14 @@ public class AtmosphereRequestHandler implements IRequestHandler
 
 	private void invokeMethod(AjaxRequestTarget target, EventSubscription subscription, Object base)
 	{
-		for (Method curMethod : base.getClass().getMethods())
+		boolean isInvocationSuccessful = eventSubscriptionInvoker.invoke(target, subscription,
+			base, event);
+		if (isInvocationSuccessful)
 		{
-			if (curMethod.isAnnotationPresent(Subscribe.class) &&
-				curMethod.getName().equals(subscription.getMethodName()))
+			if (!ajaxRequestScheduled)
 			{
-				try
-				{
-					if (!ajaxRequestScheduled)
-					{
-						ajaxRequestScheduled = true;
-						RequestCycle.get().scheduleRequestHandlerAfterCurrent(target);
-					}
-					curMethod.setAccessible(true);
-					curMethod.invoke(base, target, event.getPayload());
-				}
-				catch (IllegalAccessException e)
-				{
-					throw new WicketRuntimeException(e);
-				}
-				catch (IllegalArgumentException e)
-				{
-					throw new WicketRuntimeException(e);
-				}
-				catch (InvocationTargetException e)
-				{
-					throw new WicketRuntimeException(e);
-				}
+				ajaxRequestScheduled = true;
+				RequestCycle.get().scheduleRequestHandlerAfterCurrent(target);
 			}
 		}
 	}
